@@ -1,12 +1,11 @@
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use clap::Parser;
 use log::info;
-use chrono::{Utc, NaiveDate, NaiveDateTime, Duration, DateTime};
 use polars::prelude::*;
-use reqwest::Client;
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde_json::{Value, from_str};
+use reqwest::Client;
+use serde_json::{from_str, Value};
 use std::fs::OpenOptions;
-use std::io::Write;
 
 /// A subcommand for top
 #[derive(Parser)]
@@ -32,7 +31,6 @@ enum SubCommand {
     /// show some day's statistics info
     #[clap(name = "history")]
     History(HistoryOpts),
-
 }
 
 pub fn clap_about() -> String {
@@ -61,11 +59,98 @@ fn main() {
     match opts.subcmd {
         SubCommand::Top(opts) => {
             run_top(opts);
-        },
+        }
         SubCommand::History(opts) => {
             run_history(opts);
         }
+    }
+}
 
+fn init_blocks_parquet(file_path: &str) {
+    // create parquet file and set init values
+    // "Blockno,Transactions,UnixTimestamp,Reward,Miner,Date\n")
+    // 15001369,1,1735689592485,562.42421899,ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,2024-12-31 23:59:52
+    let mut df = df! {
+        "Blockno" => &[15001369u64],
+        "Transactions" => &[1u32],
+        "UnixTimestamp" => &[1735689592485u64],
+        "Reward" => &[562.42421899_f64],
+        "Miner" => &["ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj".to_string()],
+        "Date" => &[NaiveDateTime::parse_from_str("2024-12-31 23:59:52", "%Y-%m-%d %H:%M:%S").unwrap()]
+    }.unwrap();
+    let file = std::fs::File::create(file_path).unwrap();
+    ParquetWriter::new(file).finish(&mut df).unwrap();
+}
+
+fn get_latest_block(df: &DataFrame) -> u64 {
+    let lf_max = df.clone().lazy().max().collect().unwrap();
+    let blockno_data = lf_max.column("Blockno").unwrap();
+    let max_blockno = blockno_data.get(0).unwrap();
+    if let AnyValue::UInt64(max_blockno) = max_blockno {
+        max_blockno
+    } else {
+        panic!("max blockno is not Uint64");
+    }
+}
+
+async fn get_tip_info() -> (u64, f64) {
+    // curl 'https://mainnet-api.explorer.nervos.org/api/v1/statistics' -H 'accept: application/vnd.api+json' -H 'content-type: application/vnd.api+json'
+    let url = "https://mainnet-api.explorer.nervos.org/api/v1/statistics";
+    let client = Client::new();
+    let mut headers = HeaderMap::new();
+    let content_type_value = HeaderValue::from_str("application/vnd.api+json").unwrap();
+    headers.insert("Content-Type", content_type_value.clone());
+    headers.insert("Accept", content_type_value);
+
+    let response = client.get(url).headers(headers).send().await.unwrap();
+    let body = response.text().await.unwrap();
+
+    let json_value: Value = from_str(&body).unwrap();
+    let tip_block_str = json_value
+        .get("data")
+        .unwrap()
+        .get("attributes")
+        .unwrap()
+        .get("tip_block_number")
+        .unwrap()
+        .as_str()
+        .unwrap();
+    let hashrate = json_value
+        .get("data")
+        .unwrap()
+        .get("attributes")
+        .unwrap()
+        .get("hash_rate")
+        .unwrap()
+        .as_str()
+        .unwrap();
+    let tip_block = tip_block_str.parse::<u64>().unwrap();
+    let hashrate = hashrate.parse::<f64>().unwrap();
+
+    (tip_block, hashrate)
+}
+
+fn init_hashrate_parquet(file_path: &str) {
+    // create parquet file and set init values
+    // "Timestamp,HashRate\n")
+    // 1735747200,444485748006408.689918
+    let mut df = df! {
+        "Timestamp" => &[1735747200i64],
+        "HashRate" => &[444_485_748_006_408.7_f64]
+    }
+    .unwrap();
+    let file = std::fs::File::create(file_path).unwrap();
+    ParquetWriter::new(file).finish(&mut df).unwrap();
+}
+
+fn get_latest_timestamp_hashrate(df: &DataFrame) -> i64 {
+    let lf_max = df.clone().lazy().max().collect().unwrap();
+    let timestamp_data = lf_max.column("Timestamp").unwrap();
+    let max_timestamp = timestamp_data.get(0).unwrap();
+    if let AnyValue::Int64(max_timestamp) = max_timestamp {
+        max_timestamp
+    } else {
+        panic!("max date is not Int64");
     }
 }
 
@@ -80,19 +165,7 @@ async fn run_top(opts: TopOpts) {
     let file_path = "./data/ckb-blocks.parquet";
     let file_exist = std::path::Path::new(&file_path).exists();
     if !file_exist {
-        // create parquet file and set init values
-        // "Blockno,Transactions,UnixTimestamp,Reward,Miner,Date\n")
-        // 15001369,1,1735689592485,562.42421899,ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,2024-12-31 23:59:52
-        let mut df = df! {
-            "Blockno" => &[15001369u64],
-            "Transactions" => &[1u32],
-            "UnixTimestamp" => &[1735689592485u64],
-            "Reward" => &[562.42421899 as f64],
-            "Miner" => &["ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj".to_string()],
-            "Date" => &[NaiveDateTime::parse_from_str("2024-12-31 23:59:52", "%Y-%m-%d %H:%M:%S").unwrap()]
-        }.unwrap();
-        let file = std::fs::File::create(file_path).unwrap();
-        ParquetWriter::new(file).finish(&mut df).unwrap();
+        init_blocks_parquet(file_path);
     }
 
     // read parquet file
@@ -100,38 +173,11 @@ async fn run_top(opts: TopOpts) {
     let df = ParquetReader::new(&mut file).finish().unwrap();
 
     // get latest block
-    let lf_max = df.clone().lazy().max().collect().unwrap();
-    let blockno_data = lf_max.column("Blockno").unwrap();
-    let max_blockno = blockno_data.get(0).unwrap();
-    if let AnyValue::UInt64(max_blockno) = max_blockno {
-        latest_block = std::cmp::max(max_blockno, latest_block);
-    } else {
-        panic!("max blockno is not Uint64");
-    }
+    latest_block = std::cmp::max(latest_block, get_latest_block(&df));
     info!("latest block is: {}", latest_block);
 
     // query from tip block
-    // curl 'https://mainnet-api.explorer.nervos.org/api/v1/statistics' -H 'accept: application/vnd.api+json' -H 'content-type: application/vnd.api+json'
-    let url = "https://mainnet-api.explorer.nervos.org/api/v1/statistics";
-    let client = Client::new();
-    let mut headers = HeaderMap::new();
-    let content_type_value = HeaderValue::from_str("application/vnd.api+json").unwrap();
-    headers.insert("Content-Type", content_type_value.clone());
-    headers.insert("Accept", content_type_value);
-
-    let response = client
-       .get(url)
-       .headers(headers)
-       .send()
-       .await
-       .unwrap();
-    let body = response.text().await.unwrap();
-
-    let json_value: Value = from_str(&body).unwrap();
-    let tip_block_str = json_value.get("data").unwrap().get("attributes").unwrap().get("tip_block_number").unwrap().as_str().unwrap();
-    let hashrate = json_value.get("data").unwrap().get("attributes").unwrap().get("hash_rate").unwrap().as_str().unwrap();
-    let tip_block = tip_block_str.parse::<u64>().unwrap();
-
+    let (tip_block, hashrate) = get_tip_info().await;
     info!("tip_block: {}, current hashrate {}", tip_block, hashrate);
 
     // sync blocks
@@ -154,13 +200,8 @@ async fn run_top(opts: TopOpts) {
         let content_type_value = HeaderValue::from_str("application/vnd.api+json").unwrap();
         headers.insert("Content-Type", content_type_value.clone());
         headers.insert("Accept", content_type_value);
-    
-        let response = client
-           .get(url)
-           .headers(headers)
-           .send()
-           .await
-           .unwrap();
+
+        let response = client.get(url).headers(headers).send().await.unwrap();
         let body = response.text().await.unwrap();
         let lines: Vec<&str> = body.split('\n').collect();
         info!("got lines: {}", lines.len());
@@ -189,7 +230,7 @@ async fn run_top(opts: TopOpts) {
         }
         begin = end + 1;
         end = std::cmp::min(end + 3000, tip_block);
-        
+
         // sleep 5s
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
@@ -202,27 +243,29 @@ async fn run_top(opts: TopOpts) {
         "Reward" => reward_data,
         "Miner" => miner_data,
         "Date" => date_data
-    }.unwrap();
+    }
+    .unwrap();
 
-    df_new.sort_in_place(["Blockno"], Default::default()).unwrap();
+    df_new
+        .sort_in_place(["Blockno"], Default::default())
+        .unwrap();
 
     let df = df.vstack(&df_new).unwrap();
 
-    // split dataframe by date
+    // split DataFrame by date
+    // process today's data
     let mut latest_df = df
-    .clone()
-    .lazy()
-    .filter(
-        col("Date")
-            .is_between(
-                lit(current_date.and_hms_opt(0, 0, 0).unwrap()),
-                lit(current_date.and_hms_opt(23, 59, 59).unwrap()),
-                ClosedInterval::Both,
-            )
-    )
-    .collect().unwrap();
+        .clone()
+        .lazy()
+        .filter(col("Date").is_between(
+            lit(current_date.and_hms_opt(0, 0, 0).unwrap()),
+            lit(current_date.and_hms_opt(23, 59, 59).unwrap()),
+            ClosedInterval::Both,
+        ))
+        .collect()
+        .unwrap();
 
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
@@ -230,27 +273,27 @@ async fn run_top(opts: TopOpts) {
         .unwrap();
     ParquetWriter::new(file).finish(&mut latest_df).unwrap();
 
+    // process history data
     let mut tmp_date = current_date - Duration::days(1);
     loop {
         let mut history_df = df
-        .clone()
-        .lazy()
-        .filter(
-            col("Date")
-                .is_between(
-                    lit(tmp_date.and_hms_opt(0, 0, 0).unwrap()),
-                    lit(tmp_date.and_hms_opt(23, 59, 59).unwrap()),
-                    ClosedInterval::Both,
-                )
-        )
-        .collect().unwrap();
+            .clone()
+            .lazy()
+            .filter(col("Date").is_between(
+                lit(tmp_date.and_hms_opt(0, 0, 0).unwrap()),
+                lit(tmp_date.and_hms_opt(23, 59, 59).unwrap()),
+                ClosedInterval::Both,
+            ))
+            .collect()
+            .unwrap();
 
+        // no data for date then stop
         if history_df.height() == 0 {
             break;
         }
-    
+
         // write data to parquet file
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
@@ -258,41 +301,28 @@ async fn run_top(opts: TopOpts) {
             .unwrap();
         ParquetWriter::new(file).finish(&mut history_df).unwrap();
 
-        tmp_date = tmp_date - Duration::days(1);
+        tmp_date -= Duration::days(1);
     }
-
 
     // sync history hashrate
     let hash_rate_file_path = "./data/ckb-hashrate.parquet";
     let file_exist = std::path::Path::new(&hash_rate_file_path).exists();
     if !file_exist {
-        // create parquet file and set init values
-        // "Timestamp,HashRate\n")
-        // "created_at_unixtimestamp":"1735660800","avg_hash_rate":"452119131191160.156639
-        let mut df = df! {
-            "Timestamp" => &[1735660800i64],
-            "HashRate" => &[452119131191160.156639f64]
-        }.unwrap();
-        let file = std::fs::File::create(hash_rate_file_path).unwrap();
-        ParquetWriter::new(file).finish(&mut df).unwrap();
+        init_hashrate_parquet(hash_rate_file_path);
     }
 
     let mut file = std::fs::File::open(hash_rate_file_path).unwrap();
     let df = ParquetReader::new(&mut file).finish().unwrap();
 
     // get latest date of hashrate
-    let mut lastest_timestamp = 1735747200i64;
-    let lf_max = df.clone().lazy().max().collect().unwrap();
-    let timestamp_data = lf_max.column("Timestamp").unwrap();
-    let max_timestamp = timestamp_data.get(0).unwrap();
-    if let AnyValue::Int64(max_timestamp) = max_timestamp {
-        lastest_timestamp = max_timestamp;
-    } else {
-        panic!("max date is not Int64");
-    }
-    let lastest_date = DateTime::from_timestamp(lastest_timestamp, 0).unwrap().date_naive();
+    let latest_timestamp = get_latest_timestamp_hashrate(&df);
+    let latest_date = DateTime::from_timestamp(latest_timestamp, 0)
+        .unwrap()
+        .date_naive();
 
-    if lastest_date < current_date - Duration::days(1) {
+    // timestamp of hashrate is lastday of 16:00
+    // for example,  hashrate of 2025-01-06, it's timestamp is 2025-01-05 16:00:00
+    if latest_date < current_date - Duration::days(2) {
         // sync history hash rate
         let url = "https://mainnet-api.explorer.nervos.org/api/v1/daily_statistics/avg_hash_rate";
         let client = Client::new();
@@ -301,12 +331,7 @@ async fn run_top(opts: TopOpts) {
         headers.insert("Content-Type", content_type_value.clone());
         headers.insert("Accept", content_type_value);
 
-        let response = client
-        .get(url)
-        .headers(headers)
-        .send()
-        .await
-        .unwrap();
+        let response = client.get(url).headers(headers).send().await.unwrap();
         let body = response.text().await.unwrap();
 
         let json_value: Value = from_str(&body).unwrap();
@@ -316,23 +341,41 @@ async fn run_top(opts: TopOpts) {
         let mut hashrate_data: Vec<f64> = Vec::new();
 
         for data in json_data.iter() {
-            let created_at_unixtimestamp = data.get("attributes").unwrap().get("created_at_unixtimestamp").unwrap().as_str().unwrap().parse::<i64>().unwrap();
-            if created_at_unixtimestamp <= lastest_timestamp {
+            let created_at_unixtimestamp = data
+                .get("attributes")
+                .unwrap()
+                .get("created_at_unixtimestamp")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .parse::<i64>()
+                .unwrap();
+            // skip data before latest_timestamp
+            if created_at_unixtimestamp <= latest_timestamp {
                 continue;
             }
-            let avg_hash_rate = data.get("attributes").unwrap().get("avg_hash_rate").unwrap().as_str().unwrap().parse::<f64>().unwrap();
+            let avg_hash_rate = data
+                .get("attributes")
+                .unwrap()
+                .get("avg_hash_rate")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .parse::<f64>()
+                .unwrap();
             timestamp_data.push(created_at_unixtimestamp);
             hashrate_data.push(avg_hash_rate);
         }
 
-        let mut df_new = df! {
+        let df_new = df! {
             "Timestamp" => &timestamp_data,
             "HashRate" => &hashrate_data
-        }.unwrap();
+        }
+        .unwrap();
 
         let mut df = df.vstack(&df_new).unwrap();
 
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
@@ -343,36 +386,59 @@ async fn run_top(opts: TopOpts) {
 
     // show today's statistics info
     let percent = col("Count") * 100.0f64.into() / col("Total_Count");
-    let hash_rate = hashrate.parse::<f64>().unwrap();
-    let user_hash_rate = col("Percent") * hash_rate.into() / 100.0f64.into();
+    let user_hash_rate = col("Percent") * hashrate.into() / 100.0f64.into();
     let mut result = latest_df
-    .clone()
-    .lazy()
-    .group_by([(col("Miner"))])
-    .agg([
-        col("Blockno").count().alias("Count"),
-        col("Reward").sum().alias("User_Reward")
-    ])
-    .with_columns([
-        col("Count").sum().alias("Total_Count")
-    ])
-    .with_columns([
-        percent.alias("Percent")
-    ])
-    .with_columns([
-        user_hash_rate.alias("User_Hash_Rate")
-    ])
-    .collect().unwrap();
+        .clone()
+        .lazy()
+        .group_by([(col("Miner"))])
+        .agg([
+            col("Blockno").count().alias("Count"),
+            col("Reward").sum().alias("User_Reward"),
+        ])
+        .with_columns([col("Count").sum().alias("Total_Count")])
+        .with_columns([percent.alias("Percent")])
+        .with_columns([user_hash_rate.alias("User_Hash_Rate")])
+        .collect()
+        .unwrap();
 
     result.sort_in_place(["Count"], Default::default()).unwrap();
 
     println!("{}", result);
 }
 
+fn get_hashrate_by_date(date: NaiveDate) -> f64 {
+    // timestamp of hashrate is lastday of 16:00
+    // for example,  hashrate of 2025-01-06, it's timestamp is 2025-01-05 16:00:00
+    let s_timestamp = date.and_hms_opt(16, 0, 0).unwrap().and_utc().timestamp() - 3600 * 24;
+
+    let hash_rate_file_path = "./data/ckb-hashrate.parquet";
+    let mut file = std::fs::File::open(hash_rate_file_path).unwrap();
+    let df = ParquetReader::new(&mut file).finish().unwrap();
+
+    let lf = df
+        .clone()
+        .lazy()
+        .filter(col("Timestamp").eq(lit(s_timestamp)))
+        .collect()
+        .unwrap();
+    let hashrate_data = lf.column("HashRate").unwrap();
+    let hashrate = hashrate_data.get(0).unwrap();
+    if let AnyValue::Float64(hashrate) = hashrate {
+        hashrate
+    } else {
+        panic!("hashrate is not Float64");
+    }
+}
+
 #[tokio::main]
 async fn run_history(opts: HistoryOpts) {
     let data_number = opts.date;
-    let s_date = NaiveDate::from_ymd_opt((data_number /10000) as i32, ((data_number % 10000) / 100) as u32, (data_number % 100) as u32).unwrap();
+    let s_date = NaiveDate::from_ymd_opt(
+        (data_number / 10000) as i32,
+        ((data_number % 10000) / 100) as u32,
+        (data_number % 100) as u32,
+    )
+    .unwrap();
     println!("show history info for date: {}", s_date);
 
     let file_path = format!("./data/ckb-blocks-{}.parquet", s_date);
@@ -383,46 +449,27 @@ async fn run_history(opts: HistoryOpts) {
     }
 
     // find history hashrate
-    let mut s_hash_rate = 444485748006408.689918f64;
-    let s_timestamp = s_date.and_hms_opt(16, 0, 0).unwrap().and_utc().timestamp() - 3600 * 24;
-    let hash_rate_file_path = "./data/ckb-hashrate.parquet";
-    let mut file = std::fs::File::open(hash_rate_file_path).unwrap();
-    let df = ParquetReader::new(&mut file).finish().unwrap();
-
-    let result = df.clone().lazy().filter(col("Timestamp").eq(lit(s_timestamp))).collect().unwrap();
-    let hashrate_data = result.column("HashRate").unwrap();
-    let hash_rate = hashrate_data.get(0).unwrap();
-    if let AnyValue::Float64(hash_rate) = hash_rate {
-        s_hash_rate = hash_rate;
-    } else {
-        panic!("hash rate is not Float64");
-    }
+    let hash_rate = get_hashrate_by_date(s_date);
 
     // read parquet file
     let mut file = std::fs::File::open(file_path).unwrap();
     let df = ParquetReader::new(&mut file).finish().unwrap();
 
     let percent = col("Count") * 100.0f64.into() / col("Total_Count");
-    let hash_rate = s_hash_rate;
     let user_hash_rate = col("Percent") * hash_rate.into() / 100.0f64.into();
     let mut result = df
-    .clone()
-    .lazy()
-    .group_by([(col("Miner"))])
-    .agg([
-        col("Blockno").count().alias("Count"),
-        col("Reward").sum().alias("User_Reward")
-    ])
-    .with_columns([
-        col("Count").sum().alias("Total_Count")
-    ])
-    .with_columns([
-        percent.alias("Percent")
-    ])
-    .with_columns([
-        user_hash_rate.alias("User_Hash_Rate")
-    ])
-    .collect().unwrap();
+        .clone()
+        .lazy()
+        .group_by([(col("Miner"))])
+        .agg([
+            col("Blockno").count().alias("Count"),
+            col("Reward").sum().alias("User_Reward"),
+        ])
+        .with_columns([col("Count").sum().alias("Total_Count")])
+        .with_columns([percent.alias("Percent")])
+        .with_columns([user_hash_rate.alias("User_Hash_Rate")])
+        .collect()
+        .unwrap();
 
     result.sort_in_place(["Count"], Default::default()).unwrap();
 

@@ -81,23 +81,9 @@ curl 'https://mainnet-api.explorer.nervos.org/api/v1/daily_statistics/avg_hash_r
 ### simple info
 include date,  begin blockno and end blockno, total block count, total reward, total hashrate. 
 
-
 ### miner info
 group block info by Miner, sum block count and reward.
 calc percent of each miner, then calc hashrate of each miner by total hashrate.
-look like
-```
-Miner,Count,Reward,Percent,Hashrate
-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqv8cuf7vzh62m9gwyv59lzha9nx6ar5d9qqkp5em,49,32511.64,0.5296152,2.476971e+12
-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq2rhvzx4pm3sjjpyfc9r3vz8exem0wwdksd89j70,103,68343.35,1.1132728,5.206695e+12
-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqt3vn6g67jm7g5czehcmqdcr6jwjz8pdtg59p03h,136,89898.11,1.4699524,6.874859e+12
-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqvzz8cmjw9pqlx48d3s9nr49fhu89jk8rgycece5,137,89414.99,1.4807609,6.925410e+12
-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0dn8gg6ag6uvkl0lr0xpyt0n99dsal47sm7mzyj,727,482611.11,7.8577605,3.675017e+13
-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq22xdj8q4jdql98qkdhnqzgrsk4nqyavdcratvu9,804,524342.79,8.6900130,4.064255e+13
-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0259kv0x5jez6h0l5qr52k64weapapgyscsnmhn,1141,749987.55,12.3324687,5.767805e+13
-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqvgqh40v2g5ps3rann79tvw9gq6ewrft7gp909qk,2319,1516408.87,25.0648508,1.172265e+14
-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,3836,2513781.54,41.4613057,1.939115e+14
-```
 
 ### history
 
@@ -120,7 +106,6 @@ begin blockno is 15001370
 ## useage
 
 ```
-$ ckb-miner-stat -h
 ckb-miner-stat 0.1.0
 david <david@fi5box.com>
 
@@ -129,6 +114,7 @@ Usage: ckb-miner-stat <COMMAND>
 Commands:
   top      sync data from chain and show today's statistics info
   history  show some day's statistics info
+  report   generate report about one miner
   help     Print this message or the help of the given subcommand(s)
 
 Options:

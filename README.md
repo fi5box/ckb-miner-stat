@@ -206,3 +206,52 @@ shape: (8, 6)
 │ ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj ┆ 4032  ┆ 2.5470e6      ┆ 9600        ┆ 42.0      ┆ 1.8761e14      │
 └───────────────────────────────────────────────────────────────────────────────────────────────────┴───────┴───────────────┴─────────────┴───────────┴────────────────┘
 ```
+
+### report
+
+```
+$ ckb-miner-stat report -h
+generate report about one miner
+
+Usage: ckb-miner-stat report [OPTIONS]
+
+Options:
+  -m, --miner <MINER>  the miner to generate report [default: ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj]
+  -h, --help           Print help
+```
+
+```
+$ ckb-miner-stat report
+[2025-01-07T08:19:16Z INFO  ckb_miner_stat] generate report for miner: ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj
+[2025-01-07T08:19:16Z INFO  ckb_miner_stat] Current time: 2025-01-07 08:19:16.412321806 UTC
+shape: (8, 7)
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┬───────┬───────────────┬─────────────┬───────────┬────────────────┬───────────────────────────────┐
+│ Miner                                                                                             ┆ Count ┆ User_Reward   ┆ Total_Count ┆ Percent   ┆ User_Hash_Rate ┆ Time                          │
+│ ---                                                                                               ┆ ---   ┆ ---           ┆ ---         ┆ ---       ┆ ---            ┆ ---                           │
+│ str                                                                                               ┆ u32   ┆ f64           ┆ u32         ┆ f64       ┆ f64            ┆ datetime[ns]                  │
+╞═══════════════════════════════════════════════════════════════════════════════════════════════════╪═══════╪═══════════════╪═════════════╪═══════════╪════════════════╪═══════════════════════════════╡
+│ ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj ┆ 1394  ┆ 850111.024236 ┆ 3415        ┆ 40.819912 ┆ 1.8223e14      ┆ 2025-01-07 08:19:16.412321806 │
+│ ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj ┆ 4125  ┆ 2.5838e6      ┆ 9677        ┆ 42.626847 ┆ 1.8747e14      ┆ 2025-01-06 23:59:59           │
+│ ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj ┆ 4110  ┆ 2.5340e6      ┆ 9871        ┆ 41.637119 ┆ 1.8599e14      ┆ 2025-01-05 23:59:59           │
+│ ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj ┆ 4032  ┆ 2.5470e6      ┆ 9600        ┆ 42.0      ┆ 1.8452e14      ┆ 2025-01-04 23:59:59           │
+│ ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj ┆ 3551  ┆ 2.5454e6      ┆ 8434        ┆ 42.103391 ┆ 1.8813e14      ┆ 2025-01-03 23:59:59           │
+│ ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj ┆ 3836  ┆ 2.5140e6      ┆ 9252        ┆ 41.461306 ┆ 1.8429e14      ┆ 2025-01-02 23:59:59           │
+│ ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj ┆ 3964  ┆ 2.4527e6      ┆ 9691        ┆ 40.903931 ┆ 1.8493e14      ┆ 2025-01-01 23:59:59           │
+│ ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj ┆ 1     ┆ 562.424219    ┆ 1           ┆ 100.0     ┆ 4.4239e14      ┆ 2024-12-31 23:59:59           │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┴───────┴───────────────┴─────────────┴───────────┴────────────────┴───────────────────────────────┘
+```
+
+and write report to csv file
+
+```
+$ cat data/ckb-report-ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj.csv
+Miner,Count,User_Reward,Total_Count,Percent,User_Hash_Rate,Time
+ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,1394,850111.0242364701,3415,40.8199121522694,182225823101278.88,2025-01-07T08:19:16.412321806
+ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,4125,2583825.364133436,9677,42.62684716337708,187470936069861.25,2025-01-06T23:59:59.000000000
+ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,4110,2533966.6552701667,9871,41.63711883294499,185988243068906.4,2025-01-05T23:59:59.000000000
+ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,4032,2546975.1778808027,9600,42.0,184520161976695.9,2025-01-04T23:59:59.000000000
+ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,3551,2545394.018756647,8434,42.103391036281714,188129150540642.72,2025-01-03T23:59:59.000000000
+ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,3836,2513953.269000312,9252,41.461305663640296,184289594612255.03,2025-01-02T23:59:59.000000000
+ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,3964,2452692.220187706,9691,40.90393148281911,184934499643149.2,2025-01-01T23:59:59.000000000
+ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj,1,562.42421899,1,100.0,442388595130533.8,2024-12-31T23:59:59.000000000
+```

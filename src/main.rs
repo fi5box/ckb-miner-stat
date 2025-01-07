@@ -23,6 +23,18 @@ struct HistoryOpts {
     date: u64,
 }
 
+/// A subcommand for report
+#[derive(Parser)]
+struct ReportOpts {
+    /// the miner to generate report
+    #[clap(
+        short = 'm',
+        long = "miner",
+        default_value = "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj"
+    )]
+    miner: String,
+}
+
 #[derive(Parser)]
 enum SubCommand {
     /// sync data from chain and show today's statistics info
@@ -31,6 +43,9 @@ enum SubCommand {
     /// show some day's statistics info
     #[clap(name = "history")]
     History(HistoryOpts),
+    /// generate report about one miner
+    #[clap(name = "report")]
+    Report(ReportOpts),
 }
 
 pub fn clap_about() -> String {
@@ -62,6 +77,9 @@ fn main() {
         }
         SubCommand::History(opts) => {
             run_history(opts);
+        }
+        SubCommand::Report(opts) => {
+            run_report(opts);
         }
     }
 }
@@ -133,10 +151,10 @@ async fn get_tip_info() -> (u64, f64) {
 fn init_hashrate_parquet(file_path: &str) {
     // create parquet file and set init values
     // "Timestamp,HashRate\n")
-    // 1735747200,444485748006408.689918
+    // 1735574400,442388595130533.780735
     let mut df = df! {
-        "Timestamp" => &[1735747200i64],
-        "HashRate" => &[444_485_748_006_408.7_f64]
+        "Timestamp" => &[1735574400i64],
+        "HashRate" => &[442_388_595_130_533.8_f64]
     }
     .unwrap();
     let file = std::fs::File::create(file_path).unwrap();
@@ -351,7 +369,7 @@ async fn run_top(opts: TopOpts) {
                 .parse::<i64>()
                 .unwrap();
             // skip data before latest_timestamp
-            if created_at_unixtimestamp <= latest_timestamp {
+            if created_at_unixtimestamp < latest_timestamp {
                 continue;
             }
             let avg_hash_rate = data
@@ -474,4 +492,96 @@ async fn run_history(opts: HistoryOpts) {
     result.sort_in_place(["Count"], Default::default()).unwrap();
 
     println!("{}", result);
+}
+
+#[tokio::main]
+async fn run_report(opts: ReportOpts) {
+    let miner = &opts.miner;
+    info!("generate report for miner: {}", &miner);
+
+    let current_time = Utc::now();
+    info!("Current time: {}", current_time);
+    let current_date = current_time.date_naive();
+
+    // get tip block and hashrate
+    let (_tip_block, hashrate) = get_tip_info().await;
+
+    // get today's data
+    let file_path = "./data/ckb-blocks.parquet";
+    let file_exist = std::path::Path::new(&file_path).exists();
+    if !file_exist {
+        info!("no data for today");
+        return;
+    }
+    let mut file = std::fs::File::open(file_path).unwrap();
+    let df = ParquetReader::new(&mut file).finish().unwrap();
+
+    let percent = col("Count") * 100.0f64.into() / col("Total_Count");
+    let user_hash_rate = col("Percent") * hashrate.into() / 100.0f64.into();
+    let mut ret_df = df
+        .clone()
+        .lazy()
+        .group_by([(col("Miner"))])
+        .agg([
+            col("Blockno").count().alias("Count"),
+            col("Reward").sum().alias("User_Reward"),
+        ])
+        .with_columns([col("Count").sum().alias("Total_Count")])
+        .with_columns([percent.alias("Percent")])
+        .with_columns([user_hash_rate.alias("User_Hash_Rate")])
+        .filter(col("Miner").eq(lit(miner.clone())))
+        .with_columns([lit(current_time.naive_utc()).alias("Time")])
+        .collect()
+        .unwrap();
+
+    // get history data
+    let mut tmp_date = current_date - Duration::days(1);
+    loop {
+        let file_path = format!("./data/ckb-blocks-{}.parquet", tmp_date);
+        let file_exist = std::path::Path::new(&file_path).exists();
+        if !file_exist {
+            break;
+        }
+
+        // get hash rate by date
+        let hash_rate = get_hashrate_by_date(tmp_date);
+
+        // read parquet file
+        let mut file = std::fs::File::open(file_path).unwrap();
+        let df = ParquetReader::new(&mut file).finish().unwrap();
+
+        let percent = col("Count") * 100.0f64.into() / col("Total_Count");
+        let user_hash_rate = col("Percent") * hash_rate.into() / 100.0f64.into();
+        let data_df = df
+            .clone()
+            .lazy()
+            .group_by([(col("Miner"))])
+            .agg([
+                col("Blockno").count().alias("Count"),
+                col("Reward").sum().alias("User_Reward"),
+            ])
+            .with_columns([col("Count").sum().alias("Total_Count")])
+            .with_columns([percent.alias("Percent")])
+            .with_columns([user_hash_rate.alias("User_Hash_Rate")])
+            .filter(col("Miner").eq(lit(miner.clone())))
+            .with_columns([lit(tmp_date.and_hms_opt(23, 59, 59).unwrap()).alias("Time")])
+            .collect()
+            .unwrap();
+
+        ret_df = ret_df.vstack(&data_df).unwrap();
+
+        tmp_date -= Duration::days(1);
+    }
+
+    println!("{}", ret_df);
+
+    // write report to csv file
+    let file_path = format!("./data/ckb-report-{}.csv", miner);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(file_path)
+        .unwrap();
+    CsvWriter::new(&mut file).finish(&mut ret_df).unwrap();
 }

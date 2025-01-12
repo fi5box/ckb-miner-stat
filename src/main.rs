@@ -195,8 +195,12 @@ async fn run_top(opts: TopOpts) {
     info!("latest block is: {}", latest_block);
 
     // query from tip block
-    let (tip_block, hashrate) = get_tip_info().await;
+    let (mut tip_block, hashrate) = get_tip_info().await;
     info!("tip_block: {}, current hashrate {}", tip_block, hashrate);
+
+    // we noticed data will changed round tip block number
+    // so we late 20 blocks to get stable data
+    tip_block -= 20;
 
     // sync blocks
     let mut begin = latest_block + 1;

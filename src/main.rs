@@ -452,6 +452,39 @@ fn get_hashrate_by_date(date: NaiveDate) -> f64 {
     }
 }
 
+fn get_min_block(df: &DataFrame) -> u64 {
+    let lf = df.clone().lazy().min().collect().unwrap();
+    let blockno_data = lf.column("Blockno").unwrap();
+    let min_blockno = blockno_data.get(0).unwrap();
+    if let AnyValue::UInt64(min_blockno) = min_blockno {
+        min_blockno
+    } else {
+        panic!("max blockno is not Uint64");
+    }
+}
+
+fn get_max_block(df: &DataFrame) -> u64 {
+    let lf = df.clone().lazy().max().collect().unwrap();
+    let blockno_data = lf.column("Blockno").unwrap();
+    let max_blockno = blockno_data.get(0).unwrap();
+    if let AnyValue::UInt64(max_blockno) = max_blockno {
+        max_blockno
+    } else {
+        panic!("max blockno is not Uint64");
+    }
+}
+
+fn get_sum_reward(df: &DataFrame) -> f64 {
+    let lf = df.clone().lazy().sum().collect().unwrap();
+    let reward_data = lf.column("Reward").unwrap();
+    let sum_reward = reward_data.get(0).unwrap();
+    if let AnyValue::Float64(sum_reward) = sum_reward {
+        sum_reward
+    } else {
+        panic!("max blockno is not Uint64");
+    }
+}
+
 #[tokio::main]
 async fn run_history(opts: HistoryOpts) {
     let data_number = opts.date;
@@ -477,7 +510,23 @@ async fn run_history(opts: HistoryOpts) {
     let mut file = std::fs::File::open(file_path).unwrap();
     let df = ParquetReader::new(&mut file).finish().unwrap();
 
-    let percent = col("Count") * 100.0f64.into() / col("Total_Count");
+    let min_blockno = get_min_block(&df);
+    let max_blockno = get_max_block(&df);
+    let block_count = max_blockno - min_blockno + 1;
+    let total_reward = get_sum_reward(&df);
+
+    println!(
+        "Blockno from {} to {}, total {}",
+        min_blockno, max_blockno, block_count
+    );
+    println!("Total reward: {}", total_reward);
+    println!("Total Hashrate: {}", hash_rate);
+    println!(
+        "Avg ROR: {} CKB/T",
+        total_reward * 1_000_000_000.0 / hash_rate
+    );
+
+    let percent = col("Count") * 100.0f64.into() / block_count.into();
     let user_hash_rate = col("Percent") * hash_rate.into() / 100.0f64.into();
     let mut result = df
         .clone()
@@ -487,7 +536,6 @@ async fn run_history(opts: HistoryOpts) {
             col("Blockno").count().alias("Count"),
             col("Reward").sum().alias("User_Reward"),
         ])
-        .with_columns([col("Count").sum().alias("Total_Count")])
         .with_columns([percent.alias("Percent")])
         .with_columns([user_hash_rate.alias("User_Hash_Rate")])
         .collect()
@@ -508,7 +556,7 @@ async fn run_report(opts: ReportOpts) {
     let current_date = current_time.date_naive();
 
     // get tip block and hashrate
-    let (_tip_block, hashrate) = get_tip_info().await;
+    let (_tip_block, hash_rate) = get_tip_info().await;
 
     // get today's data
     let file_path = "./data/ckb-blocks.parquet";
@@ -520,8 +568,14 @@ async fn run_report(opts: ReportOpts) {
     let mut file = std::fs::File::open(file_path).unwrap();
     let df = ParquetReader::new(&mut file).finish().unwrap();
 
-    let percent = col("Count") * 100.0f64.into() / col("Total_Count");
-    let user_hash_rate = col("Percent") * hashrate.into() / 100.0f64.into();
+    let min_blockno = get_min_block(&df);
+    let max_blockno = get_max_block(&df);
+    let block_count = max_blockno - min_blockno + 1;
+    let total_reward = get_sum_reward(&df);
+    let avg_ror = total_reward * 1_000_000_000.0 / hash_rate;
+
+    let percent = col("Count") * 100.0f64.into() / block_count.into();
+    let user_hash_rate = col("Percent") * hash_rate.into() / 100.0f64.into();
     let mut ret_df = df
         .clone()
         .lazy()
@@ -530,11 +584,15 @@ async fn run_report(opts: ReportOpts) {
             col("Blockno").count().alias("Count"),
             col("Reward").sum().alias("User_Reward"),
         ])
-        .with_columns([col("Count").sum().alias("Total_Count")])
         .with_columns([percent.alias("Percent")])
         .with_columns([user_hash_rate.alias("User_Hash_Rate")])
         .filter(col("Miner").eq(lit(miner.clone())))
-        .with_columns([lit(current_time.naive_utc()).alias("Time")])
+        .with_columns([
+            lit(block_count).alias("Total_Count"),
+            lit(total_reward).alias("Total_Reward"),
+            lit(avg_ror).alias("Avg_ROR"),
+            lit(current_time.naive_utc()).alias("Time"),
+        ])
         .collect()
         .unwrap();
 
@@ -554,7 +612,13 @@ async fn run_report(opts: ReportOpts) {
         let mut file = std::fs::File::open(file_path).unwrap();
         let df = ParquetReader::new(&mut file).finish().unwrap();
 
-        let percent = col("Count") * 100.0f64.into() / col("Total_Count");
+        let min_blockno = get_min_block(&df);
+        let max_blockno = get_max_block(&df);
+        let block_count = max_blockno - min_blockno + 1;
+        let total_reward = get_sum_reward(&df);
+        let avg_ror = total_reward * 1_000_000_000.0 / hash_rate;
+
+        let percent = col("Count") * 100.0f64.into() / block_count.into();
         let user_hash_rate = col("Percent") * hash_rate.into() / 100.0f64.into();
         let data_df = df
             .clone()
@@ -564,11 +628,15 @@ async fn run_report(opts: ReportOpts) {
                 col("Blockno").count().alias("Count"),
                 col("Reward").sum().alias("User_Reward"),
             ])
-            .with_columns([col("Count").sum().alias("Total_Count")])
             .with_columns([percent.alias("Percent")])
             .with_columns([user_hash_rate.alias("User_Hash_Rate")])
             .filter(col("Miner").eq(lit(miner.clone())))
-            .with_columns([lit(tmp_date.and_hms_opt(23, 59, 59).unwrap()).alias("Time")])
+            .with_columns([
+                lit(block_count).alias("Total_Count"),
+                lit(total_reward).alias("Total_Reward"),
+                lit(avg_ror).alias("Avg_ROR"),
+                lit(tmp_date.and_hms_opt(23, 59, 59).unwrap()).alias("Time"),
+            ])
             .collect()
             .unwrap();
 

@@ -1,88 +1,36 @@
-use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
-use clap::Parser;
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+
+use std::fs;
+use std::io::Write;
+use tauri::command;
+
+use chrono::{format, DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use log::info;
 use polars::prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
 use serde_json::{from_str, Value};
 use std::fs::OpenOptions;
+use std::sync::atomic::AtomicU64;
 
-/// A subcommand for top
-#[derive(Parser)]
-struct TopOpts {
-    /// Chain config path
-    #[clap(short = 'b', long = "begin-block", default_value = "15001369")]
-    begin_block: u64,
-}
+// global variable store progress
+static PROGRESS: AtomicU64 = AtomicU64::new(0);
 
-/// A subcommand for history
-#[derive(Parser)]
-struct HistoryOpts {
-    /// the date to show history info
-    #[clap(short = 'd', long = "date", default_value = "20250101")]
-    date: u64,
-}
 
-/// A subcommand for report
-#[derive(Parser)]
-struct ReportOpts {
-    /// the miner to generate report
-    #[clap(
-        short = 'm',
-        long = "miner",
-        default_value = "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0tpsqq08mkay9ewrfrdwlcghv62qw704s93hhsj"
-    )]
-    miner: String,
-}
+pub fn app_home_dir() -> String {
+    use tauri::utils::platform::current_exe;
 
-#[derive(Parser)]
-enum SubCommand {
-    /// sync data from chain and show today's statistics info
-    #[clap(name = "top")]
-    Top(TopOpts),
-    /// show some day's statistics info
-    #[clap(name = "history")]
-    History(HistoryOpts),
-    /// generate report about one miner
-    #[clap(name = "report")]
-    Report(ReportOpts),
-}
-
-pub fn clap_about() -> String {
-    let name = env!("CARGO_PKG_NAME").to_string();
-    let version = env!("CARGO_PKG_VERSION");
-    let authors = env!("CARGO_PKG_AUTHORS");
-    name + " " + version + "\n" + authors
-}
-
-#[derive(Parser)]
-#[clap(version, about = clap_about())]
-struct Opts {
-    #[clap(subcommand)]
-    subcmd: SubCommand,
-}
-
-fn main() {
-    ::std::env::set_var("RUST_BACKTRACE", "full");
-    ::std::env::set_var("RUST_LOG", "info");
-    ::std::env::set_var("POLARS_FMT_STR_LEN", "256");
-
-    env_logger::init();
-
-    let opts: Opts = Opts::parse();
-
-    match opts.subcmd {
-        SubCommand::Top(opts) => {
-            run_top(opts);
-        }
-        SubCommand::History(opts) => {
-            run_history(opts);
-        }
-        SubCommand::Report(opts) => {
-            run_report(opts);
-        }
+    let app_exe = current_exe().unwrap();
+    let app_dir = app_exe.parent().unwrap();
+    let app_dir_str = app_dir.to_str().unwrap().to_string();
+    // 去掉 \\?\ 前缀
+    if app_dir_str.starts_with(r"\\?\") {
+        app_dir_str[4..].to_string()
+    } else {
+        app_dir_str
     }
 }
+
 
 fn init_blocks_parquet(file_path: &str) {
     // create parquet file and set init values
@@ -172,22 +120,27 @@ fn get_latest_timestamp_hashrate(df: &DataFrame) -> i64 {
     }
 }
 
-#[tokio::main]
-async fn run_top(opts: TopOpts) {
+async fn sync_to_tip() {
     let current_time = Utc::now();
     info!("Current time: {}", current_time);
     let current_date = current_time.date_naive();
 
-    let mut latest_block: u64 = opts.begin_block;
+    let mut latest_block: u64 = 15001369;
 
-    let file_path = "./data/ckb-blocks.parquet";
+    let app_home = app_home_dir();
+    info!("app_home: {}", app_home);
+    // create data dir
+    let data_dir = format!("{}/data", app_home);
+    fs::create_dir_all(data_dir).unwrap();
+
+    let file_path = format!("{}/data/ckb-blocks.parquet", app_home);
     let file_exist = std::path::Path::new(&file_path).exists();
     if !file_exist {
-        init_blocks_parquet(file_path);
+        init_blocks_parquet(&file_path);
     }
 
     // read parquet file
-    let mut file = std::fs::File::open(file_path).unwrap();
+    let mut file = std::fs::File::open(&file_path).unwrap();
     let df = ParquetReader::new(&mut file).finish().unwrap();
 
     // get latest block
@@ -247,6 +200,8 @@ async fn run_top(opts: TopOpts) {
             date_data.push(date);
         }
 
+        PROGRESS.store(end * 100 / tip_block, std::sync::atomic::Ordering::Relaxed);
+
         if end == tip_block {
             break;
         }
@@ -291,7 +246,7 @@ async fn run_top(opts: TopOpts) {
         .write(true)
         .create(true)
         .truncate(true)
-        .open(file_path)
+        .open(&file_path)
         .unwrap();
     ParquetWriter::new(file).finish(&mut latest_df).unwrap();
 
@@ -319,7 +274,7 @@ async fn run_top(opts: TopOpts) {
             .write(true)
             .create(true)
             .truncate(true)
-            .open(format!("./data/ckb-blocks-{}.parquet", tmp_date))
+            .open(format!("{}/data/ckb-blocks-{}.parquet", app_home, tmp_date))
             .unwrap();
         ParquetWriter::new(file).finish(&mut history_df).unwrap();
 
@@ -327,13 +282,13 @@ async fn run_top(opts: TopOpts) {
     }
 
     // sync history hashrate
-    let hash_rate_file_path = "./data/ckb-hashrate.parquet";
+    let hash_rate_file_path = format!("{}/data/ckb-hashrate.parquet", app_home);
     let file_exist = std::path::Path::new(&hash_rate_file_path).exists();
     if !file_exist {
-        init_hashrate_parquet(hash_rate_file_path);
+        init_hashrate_parquet(&hash_rate_file_path);
     }
 
-    let mut file = std::fs::File::open(hash_rate_file_path).unwrap();
+    let mut file = std::fs::File::open(&hash_rate_file_path).unwrap();
     let df = ParquetReader::new(&mut file).finish().unwrap();
 
     // get latest date of hashrate
@@ -401,7 +356,7 @@ async fn run_top(opts: TopOpts) {
             .write(true)
             .create(true)
             .truncate(true)
-            .open(hash_rate_file_path)
+            .open(&hash_rate_file_path)
             .unwrap();
         ParquetWriter::new(file).finish(&mut df).unwrap();
     }
@@ -425,7 +380,62 @@ async fn run_top(opts: TopOpts) {
 
     result.sort_in_place(["Count"], Default::default()).unwrap();
 
-    println!("{}", result);
+    // covert result to json
+    let file_path = format!("{}/data/ckb-statistics-today.csv", app_home);
+    let file = std::fs::File::create(&file_path).unwrap();
+    let writer = std::io::BufWriter::new(file);
+
+    CsvWriter::new(writer)
+        .include_header(true) 
+        .finish(&mut result).unwrap();
+}
+
+
+fn sync_background_task() {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            sync_to_tip().await;
+
+            // restart sync every 30 minutes
+            tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;
+        }
+    });
+}
+
+#[command]
+fn get_progress() -> u64 {
+    PROGRESS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[command]
+fn get_synced_dates() -> Vec<String> {
+    let mut dates = Vec::new();
+    let current_date = Utc::now().date_naive();
+    let mut tmp_date = current_date - Duration::days(1);
+    let app_home = app_home_dir();
+    loop {
+        let file_path = format!("{}/data/ckb-blocks-{}.parquet", app_home, tmp_date);
+        let file_exist = std::path::Path::new(&file_path).exists();
+        if !file_exist {
+            break;
+        }
+        dates.push(tmp_date.to_string());
+        tmp_date -= Duration::days(1);
+    }
+    info!("get_synced_dates: {:?}", dates);
+    dates
+}
+
+#[command]
+fn get_today_info() -> String {
+    // load today's statistics info from file
+    let app_home = app_home_dir();
+    let file_path = format!("{}/data/ckb-statistics-today.csv", app_home);
+    let file_exist = std::path::Path::new(&file_path).exists();
+    if !file_exist {
+        return "".to_string();
+    }
+    fs::read_to_string(file_path).unwrap()
 }
 
 fn get_hashrate_by_date(date: NaiveDate) -> f64 {
@@ -433,7 +443,8 @@ fn get_hashrate_by_date(date: NaiveDate) -> f64 {
     // for example,  hashrate of 2025-01-06, it's timestamp is 2025-01-05 16:00:00
     let s_timestamp = date.and_hms_opt(16, 0, 0).unwrap().and_utc().timestamp() - 3600 * 24;
 
-    let hash_rate_file_path = "./data/ckb-hashrate.parquet";
+    let app_home = app_home_dir();
+    let hash_rate_file_path = format!("{}/data/ckb-hashrate.parquet", app_home);
     let mut file = std::fs::File::open(hash_rate_file_path).unwrap();
     let df = ParquetReader::new(&mut file).finish().unwrap();
 
@@ -485,22 +496,23 @@ fn get_sum_reward(df: &DataFrame) -> f64 {
     }
 }
 
-#[tokio::main]
-async fn run_history(opts: HistoryOpts) {
-    let data_number = opts.date;
+#[command]
+fn get_info_by_date(date: u32) -> (String, String) {
+    let data_number = date;
     let s_date = NaiveDate::from_ymd_opt(
         (data_number / 10000) as i32,
         ((data_number % 10000) / 100) as u32,
         (data_number % 100) as u32,
     )
     .unwrap();
-    println!("show history info for date: {}", s_date);
+    info!("show history info for date: {}", s_date);
 
-    let file_path = format!("./data/ckb-blocks-{}.parquet", s_date);
+    let app_home = app_home_dir();
+    let file_path = format!("{}/data/ckb-blocks-{}.parquet", app_home, s_date);
     let file_exist = std::path::Path::new(&file_path).exists();
     if !file_exist {
         info!("no data for date: {}", s_date);
-        return;
+        return ("".to_string(), "".to_string());
     }
 
     // find history hashrate
@@ -515,16 +527,17 @@ async fn run_history(opts: HistoryOpts) {
     let block_count = max_blockno - min_blockno + 1;
     let total_reward = get_sum_reward(&df);
 
-    println!(
-        "Blockno from {} to {}, total {}",
-        min_blockno, max_blockno, block_count
-    );
-    println!("Total reward: {}", total_reward);
-    println!("Total Hashrate: {}", hash_rate);
-    println!(
-        "Avg ROR: {} CKB/T",
+    let abstrac_info = format!(
+        "Blockno from {} to {}, total {}\nTotal reward: {}\nTotal Hashrate: {}\nAvg ROR: {} CKB/T",
+        min_blockno,
+        max_blockno,
+        block_count,
+        total_reward,
+        hash_rate,
         total_reward * 1_000_000_000.0 / hash_rate
     );
+
+    info!("abstrac_info: {}", abstrac_info);
 
     let percent = col("Count") * 100.0f64.into() / block_count.into();
     let user_hash_rate = col("Percent") * hash_rate.into() / 100.0f64.into();
@@ -543,117 +556,32 @@ async fn run_history(opts: HistoryOpts) {
 
     result.sort_in_place(["Count"], Default::default()).unwrap();
 
-    println!("{}", result);
+    // convert result to csv and store in a string
+    let mut csv_data = Vec::new();
+
+    CsvWriter::new(&mut csv_data)
+        .include_header(true)
+        .finish(&mut result)
+        .unwrap();
+
+    let csv_string = String::from_utf8(csv_data).unwrap();
+
+    return (abstrac_info, csv_string);
 }
 
-#[tokio::main]
-async fn run_report(opts: ReportOpts) {
-    let miner = &opts.miner;
-    info!("generate report for miner: {}", &miner);
 
-    let current_time = Utc::now();
-    info!("Current time: {}", current_time);
-    let current_date = current_time.date_naive();
-
-    // get tip block and hashrate
-    let (_tip_block, hash_rate) = get_tip_info().await;
-
-    // get today's data
-    let file_path = "./data/ckb-blocks.parquet";
-    let file_exist = std::path::Path::new(&file_path).exists();
-    if !file_exist {
-        info!("no data for today");
-        return;
-    }
-    let mut file = std::fs::File::open(file_path).unwrap();
-    let df = ParquetReader::new(&mut file).finish().unwrap();
-
-    let min_blockno = get_min_block(&df);
-    let max_blockno = get_max_block(&df);
-    let block_count = max_blockno - min_blockno + 1;
-    let total_reward = get_sum_reward(&df);
-    let avg_ror = total_reward * 1_000_000_000.0 / hash_rate;
-
-    let percent = col("Count") * 100.0f64.into() / block_count.into();
-    let user_hash_rate = col("Percent") * hash_rate.into() / 100.0f64.into();
-    let mut ret_df = df
-        .clone()
-        .lazy()
-        .group_by([(col("Miner"))])
-        .agg([
-            col("Blockno").count().alias("Count"),
-            col("Reward").sum().alias("User_Reward"),
-        ])
-        .with_columns([percent.alias("Percent")])
-        .with_columns([user_hash_rate.alias("User_Hash_Rate")])
-        .filter(col("Miner").eq(lit(miner.clone())))
-        .with_columns([
-            lit(block_count).alias("Total_Count"),
-            lit(total_reward).alias("Total_Reward"),
-            lit(avg_ror).alias("Avg_ROR"),
-            lit(current_time.naive_utc()).alias("Time"),
-        ])
-        .collect()
-        .unwrap();
-
-    // get history data
-    let mut tmp_date = current_date - Duration::days(1);
-    loop {
-        let file_path = format!("./data/ckb-blocks-{}.parquet", tmp_date);
-        let file_exist = std::path::Path::new(&file_path).exists();
-        if !file_exist {
-            break;
-        }
-
-        // get hash rate by date
-        let hash_rate = get_hashrate_by_date(tmp_date);
-
-        // read parquet file
-        let mut file = std::fs::File::open(file_path).unwrap();
-        let df = ParquetReader::new(&mut file).finish().unwrap();
-
-        let min_blockno = get_min_block(&df);
-        let max_blockno = get_max_block(&df);
-        let block_count = max_blockno - min_blockno + 1;
-        let total_reward = get_sum_reward(&df);
-        let avg_ror = total_reward * 1_000_000_000.0 / hash_rate;
-
-        let percent = col("Count") * 100.0f64.into() / block_count.into();
-        let user_hash_rate = col("Percent") * hash_rate.into() / 100.0f64.into();
-        let data_df = df
-            .clone()
-            .lazy()
-            .group_by([(col("Miner"))])
-            .agg([
-                col("Blockno").count().alias("Count"),
-                col("Reward").sum().alias("User_Reward"),
-            ])
-            .with_columns([percent.alias("Percent")])
-            .with_columns([user_hash_rate.alias("User_Hash_Rate")])
-            .filter(col("Miner").eq(lit(miner.clone())))
-            .with_columns([
-                lit(block_count).alias("Total_Count"),
-                lit(total_reward).alias("Total_Reward"),
-                lit(avg_ror).alias("Avg_ROR"),
-                lit(tmp_date.and_hms_opt(23, 59, 59).unwrap()).alias("Time"),
-            ])
-            .collect()
-            .unwrap();
-
-        ret_df = ret_df.vstack(&data_df).unwrap();
-
-        tmp_date -= Duration::days(1);
-    }
-
-    println!("{}", ret_df);
-
-    // write report to csv file
-    let file_path = format!("./data/ckb-report-{}.csv", miner);
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(file_path)
-        .unwrap();
-    CsvWriter::new(&mut file).finish(&mut ret_df).unwrap();
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    env_logger::init();
+    tauri::Builder::default()
+        .setup(|app| {
+            // start background task
+            sync_background_task();
+            Ok(())
+        })
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![get_progress, get_synced_dates, get_today_info, get_info_by_date])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }

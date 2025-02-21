@@ -1,10 +1,8 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-
 use std::fs;
-use std::io::Write;
 use tauri::command;
 
-use chrono::{format, DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use log::info;
 use polars::prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -574,7 +572,7 @@ fn get_info_by_date(date: u32) -> (String, String) {
 pub fn run() {
     env_logger::init();
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(|_app| {
             // start background task
             sync_background_task();
             Ok(())

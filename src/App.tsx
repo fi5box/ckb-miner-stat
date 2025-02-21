@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import Calendar from 'react-calendar';
@@ -46,23 +45,29 @@ function App() {
       <span style={{ marginTop: '10px' }}>Sync Progress: {`${Math.round(progress)}%`}</span>
       </div>
       <div style={{ margin: '20px 0' }}></div>
-      <DataCalendar dateList={dateList} />
+      <DateCalendar dateList={dateList} />
     </div>
   );
 }
 
-interface DataCalendarProps {
+interface DateCalendarProps {
   dateList: Date[];
 }
 
-const DataCalendar: React.FC<DataCalendarProps> = ({ dateList }) => {
+const DateCalendar: React.FC<DateCalendarProps> = ({ dateList }) => {
   const [abstractInfo, setAbstractInfo] = useState("");
   const [statisticsInfo, setStatisticsInfo] = useState("");
 
-  async function handleDateChange(date: Date) {
+  type ValuePiece = Date | null;
+
+  type Value = ValuePiece | [ValuePiece, ValuePiece];
+
+  async function handleDateChange(value: Value) {
+    if (value === null || Array.isArray(value)) return;
+    const date = value as Date;
     console.log("showing info for date", date);
     if (date.toDateString() === new Date().toDateString()) {
-      const info: String = await invoke("get_today_info", {});
+      const info: string = await invoke("get_today_info", {});
       console.log(info);
       setAbstractInfo("");
       setStatisticsInfo(info);
@@ -71,7 +76,7 @@ const DataCalendar: React.FC<DataCalendarProps> = ({ dateList }) => {
       const month = date.getMonth() + 1; // in js month is 0-indexed
       const day = date.getDate();
       const dateNumber = year * 10000 + month * 100 + day;
-      const info: [String, String] = await invoke("get_info_by_date", { date: dateNumber });
+      const info: [string, string] = await invoke("get_info_by_date", { date: dateNumber });
       console.log(info[0]);
       console.log(info[1]);
       setAbstractInfo(info[0]);
@@ -82,7 +87,7 @@ const DataCalendar: React.FC<DataCalendarProps> = ({ dateList }) => {
   return (
     <div>
       <Calendar
-        onChange={handleDateChange}
+        onChange={(value, _event) => handleDateChange(value)}
         tileClassName={({ date, view }) => {
           if (view === 'month' && dateList.some(d => new Date(d).toDateString() === date.toDateString())) {
             return 'calendar-highlight';
@@ -108,12 +113,12 @@ const DataCalendar: React.FC<DataCalendarProps> = ({ dateList }) => {
 };
 
 interface CsvAntdTableViewerProps {
-  csvText: String;
+  csvText: string;
 }
 
 const CsvAntdTableViewer: React.FC<CsvAntdTableViewerProps> = ({ csvText }) => {
   const parsedData = Papa.parse(csvText, { header: true }).data;
-  const dataSource = parsedData.map((row) => ({ ...row }));
+  const dataSource = Array.isArray(parsedData) ? parsedData.map((row) => (typeof row === 'object' ? { ...row } : {})) : [];
   const columns = dataSource.length > 0 ? Object.keys(dataSource[0]).map(key => ({
       title: key,
       dataIndex: key

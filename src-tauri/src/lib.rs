@@ -526,7 +526,8 @@ fn get_info_by_date(date: u32) -> (String, String) {
     let total_reward = get_sum_reward(&df);
 
     let abstrac_info = format!(
-        "Blockno from {} to {}, total {}\nTotal reward: {}\nTotal Hashrate: {}\nAvg ROR: {} CKB/T",
+        "{}: \nBlockno from {} to {}, total {} \nTotal reward: {} CKB \nTotal Hashrate: {} \nAvg ROR: {} CKB/T",
+        s_date,
         min_blockno,
         max_blockno,
         block_count,

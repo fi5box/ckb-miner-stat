@@ -100,13 +100,17 @@ const DateCalendar: React.FC<DateCalendarProps> = ({ dateList }) => {
 
       {abstractInfo && (
       <div style={{ marginTop: '20px' }}>
+        <div style={{ margin: '20px 0' }}></div>
         <h2>Abstract Information</h2>
-        <p>{abstractInfo}</p>
+        <pre style={{ whiteSpace: 'pre-wrap' }}>{abstractInfo}</pre>
       </div>
       )}
 
       {statisticsInfo && (
-      <CsvAntdTableViewer csvText={statisticsInfo} />
+      <div style={{ marginTop: '20px' }}>
+        <div style={{ margin: '20px 0' }}></div>
+        <CsvAntdTableViewer csvText={statisticsInfo} />
+      </div>
       )}
     </div>
   );

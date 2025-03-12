@@ -2,7 +2,7 @@
 use std::fs;
 use tauri::command;
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
 use log::info;
 use polars::prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -392,7 +392,12 @@ async fn sync_to_tip() {
 fn sync_background_task() {
     tauri::async_runtime::spawn(async move {
         loop {
-            sync_to_tip().await;
+            let current_time = Utc::now();
+            if (current_time.hour() == 0 && current_time.minute() < 10) || (current_time.hour() == 23 && current_time.minute() > 50) {
+                info!("Skipping sync as it is close to midnight");
+            } else {
+                sync_to_tip().await;
+            }
 
             // restart sync every 30 minutes
             tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;

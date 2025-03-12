@@ -2,6 +2,22 @@
 
 Wrap ckb-miner-stat as windows app by Tauri.
 
+## dev
+
+run with debug
+
+```
+$env:RUST_LOG="debug"; npm run tauri dev
+```
+
+## release
+
+```
+npm run tauri build
+```
+
+because it's portable, so just use `src-tauri\target\release\ckb-miner-stat-app.exe`, not file in `src-tauri\target\release\bundle`.
+
 ## Usage
 
 ckb-miner-stat-app is a portable exe file.
